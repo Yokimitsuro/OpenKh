@@ -1,16 +1,6 @@
 {
   "mods": [
-    {
-      "name": "KHFM - Voces en Castellano",
-      "repo": "khspanishmix/kh1.5SpanishMixDemo",
-      "description": "Doblaje al español para KH1 Final Mix.",
-      "image": "https://link-a-la-imagen.png"
-    },
-    {
-      "name": "KH2 Randomizer",
-      "repo": "OpenKH/kh2-randomizer",
-      "description": "Randomiza cofres y encuentros en KH2FM.",
-      "image": "https://link-a-la-imagen.png"
-    }
+    { "repo": "khspanishmix/kh1.5SpanishMixDemo" },
+    { "repo": "OpenKH/kh2-randomizer" }
   ]
 }
