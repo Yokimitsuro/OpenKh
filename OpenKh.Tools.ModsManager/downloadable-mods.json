@@ -1,0 +1,41 @@
+{
+  "mods": {
+    "kh1": [
+      {
+        "repo": "khspanishmix/kh1.5SpanishMixDemo"
+      },
+      {
+        "repo": "Yokimitsuro/OpenKh"
+      },
+      {
+        "repo": "OpenKH/mod-template"
+      }
+    ],
+    "kh2": [
+      {
+        "repo": "OpenKH/kh2-randomizer"
+      },
+      {
+        "repo": "OpenKH/mod-template" 
+      },
+      {
+        "repo": "1234567890num/KingdomHearts2Plando"
+      }
+    ],
+    "bbs": [
+      {
+        "repo": "OpenKH/mod-template" 
+      }
+    ],
+    "Recom": [
+      {
+        "repo": "OpenKH/mod-template" 
+      }
+    ],
+    "kh3d": [
+      {
+        "repo": "OpenKH/mod-template" 
+      }
+    ]
+  }
+}
