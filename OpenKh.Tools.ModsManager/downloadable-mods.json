@@ -1,41 +1,50 @@
 {
   "mods": {
     "kh1": [
-      {
-        "repo": "khspanishmix/kh1.5SpanishMixDemo"
-      },
-      {
-        "repo": "Yokimitsuro/OpenKh"
-      },
-      {
-        "repo": "OpenKH/mod-template"
-      }
+        {
+            "repo": "MainMemory/KH1PCMusicRando"
+        },
+        {
+            "repo": "GuidingHeart/KH1-Riku"
+        },
+        {
+            "repo": "Saro2000/KH1FM-2DWldArt"
+        },
+        {
+            "repo": "SuperfieldCU/ConsistentLocalizationKH1"
+        },
+        {
+            "repo": "Saro2000/KH1FM-HGSUI"
+        }
     ],
     "kh2": [
-      {
-        "repo": "OpenKH/kh2-randomizer"
-      },
-      {
-        "repo": "OpenKH/mod-template" 
-      },
-      {
-        "repo": "1234567890num/KingdomHearts2Plando"
-      }
+        {
+            "repo": "Napstio/Playable-Olette"
+        },
+        {
+            "repo": "Kite2810/Master-Trio"
+        },
+        {
+            "repo": "wavingfuture/KH2-gunblade"
+        },
+        {
+            "repo": "danimalforlife/TR-Filter"
+        }
     ],
     "bbs": [
-      {
-        "repo": "OpenKH/mod-template" 
-      }
+        {
+            "repo": "Happyfrozenfire/not-applicable"
+        }
     ],
     "Recom": [
-      {
-        "repo": "OpenKH/mod-template" 
-      }
+        {
+            "repo": "EmeraldKeys/DDD-Sora"
+        }
     ],
     "kh3d": [
-      {
-        "repo": "OpenKH/mod-template" 
-      }
+        {
+            "repo": "solt-frfr/DDD-KH2-tex"
+        }
     ]
   }
 }
