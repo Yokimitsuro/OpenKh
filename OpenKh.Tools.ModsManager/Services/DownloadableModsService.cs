@@ -19,7 +19,7 @@ namespace OpenKh.Tools.ModsManager.Services
 {
     public static class DownloadableModsService
     {
-        private const string DEFAULT_MODS_JSON_URL = "https://raw.githubusercontent.com/OpenKH/mods-manager-feed/main/downloadable-mods.json";
+        private const string DEFAULT_MODS_JSON_URL = "https://raw.githubusercontent.com/Yokimitsuro/mods-manager-feed/refs/heads/main/downloadable-mods.json";
         private static string CachePath => Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "downloadable-mods.json");
         private static HttpClient _httpClient = new HttpClient();
         private static string _modDirectoryPath = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "mods");
@@ -39,7 +39,7 @@ namespace OpenKh.Tools.ModsManager.Services
             try
             {
                 var data = await GetDownloadableModsData();
-                
+
                 if (data?.Mods == null || !data.Mods.ContainsKey(game))
                     return Enumerable.Empty<DownloadableModModel>();
 
@@ -59,7 +59,7 @@ namespace OpenKh.Tools.ModsManager.Services
 
                 // Wait for all tasks to complete
                 var results = await Task.WhenAll(tasks);
-                
+
                 // Add only non-null results
                 foreach (var modInfo in results)
                 {
@@ -97,12 +97,12 @@ namespace OpenKh.Tools.ModsManager.Services
                 var path = repo.Split('/');
                 if (path.Length != 2)
                     return null;
-                
+
                 var userName = path[0];
                 var repoName = path[1];
-                
+
                 var yamlContent = await TryFetchFile(GetMetadataJsonUrl(repo));
-                
+
                 if (string.IsNullOrEmpty(yamlContent))
                 {
                     yamlContent = await TryFetchFile($"https://raw.githubusercontent.com/{userName}/{repoName}/master/mod.yml");
@@ -116,14 +116,14 @@ namespace OpenKh.Tools.ModsManager.Services
                 {
                     metadata = Metadata.Read(ms);
                 }
-                
+
                 // Try to fetch GitHub repository description
                 string repoDescription = null;
                 try
                 {
                     string repoApiUrl = $"https://api.github.com/repos/{userName}/{repoName}";
                     var response = await TryFetchFile(repoApiUrl);
-                    
+
                     if (!string.IsNullOrEmpty(response))
                     {
                         var repoInfo = JsonConvert.DeserializeObject<Dictionary<string, object>>(response);
@@ -137,14 +137,14 @@ namespace OpenKh.Tools.ModsManager.Services
                 {
                     // Ignore GitHub API errors
                 }
-                
+
                 // Try to get icon.png from main branch first, then master
                 BitmapImage iconImage = null;
                 BitmapImage previewImage = null;
                 try
                 {
                     byte[] imageBytes = await TryFetchBinaryFile(GetIconUrl(repo));
-                    
+
                     if (imageBytes == null || imageBytes.Length == 0)
                     {
                         imageBytes = await TryFetchBinaryFile($"https://raw.githubusercontent.com/{userName}/{repoName}/master/icon.png");
@@ -162,7 +162,7 @@ namespace OpenKh.Tools.ModsManager.Services
                             image.EndInit();
                             ms.Position = 0;
                             iconImage = image;
-                            
+
                             // Guardar la imagen en disco para futuras referencias
                             string localModPath = Path.Combine(_modDirectoryPath, userName, repoName);
                             Directory.CreateDirectory(localModPath);
@@ -173,10 +173,10 @@ namespace OpenKh.Tools.ModsManager.Services
                             Console.WriteLine($"Error creating icon image for {userName}/{repoName}: {ex.Message}");
                         }
                     }
-                    
+
                     // Try to get preview.png
                     byte[] previewBytes = await TryFetchBinaryFile(GetPreviewUrl(repo));
-                    
+
                     if (previewBytes == null || previewBytes.Length == 0)
                     {
                         previewBytes = await TryFetchBinaryFile($"https://raw.githubusercontent.com/{userName}/{repoName}/master/preview.png");
@@ -194,7 +194,7 @@ namespace OpenKh.Tools.ModsManager.Services
                             image.EndInit();
                             ms.Position = 0;
                             previewImage = image;
-                            
+
                             // Guardar la imagen en disco para futuras referencias
                             string localModPath = Path.Combine(_modDirectoryPath, userName, repoName);
                             Directory.CreateDirectory(localModPath);
@@ -211,7 +211,7 @@ namespace OpenKh.Tools.ModsManager.Services
                     Debug.WriteLine($"Error fetching icon for {repo}: {ex.Message}");
                     // Continue without icon
                 }
-                
+
                 return new DownloadableModModel
                 {
                     Repository = repo,
@@ -234,15 +234,15 @@ namespace OpenKh.Tools.ModsManager.Services
         {
             if (string.IsNullOrEmpty(repo))
                 return null;
-            
+
             return $"{GetRawBaseUrl(repo)}/icon.png";
         }
-        
+
         public static string GetPreviewUrl(string repo)
         {
             if (string.IsNullOrEmpty(repo))
                 return null;
-            
+
             return $"{GetRawBaseUrl(repo)}/preview.png";
         }
 
@@ -306,26 +306,26 @@ namespace OpenKh.Tools.ModsManager.Services
             {
                 // First try to fetch from remote URL
                 string json = await TryFetchFile(DEFAULT_MODS_JSON_URL);
-                
+
                 // If remote fetch fails, try to use local JSON
                 if (string.IsNullOrEmpty(json))
                 {
                     var localJsonPath = Path.Combine(
                         Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location),
                         "downloadable-mods.json");
-                    
+
                     if (File.Exists(localJsonPath))
                     {
                         json = File.ReadAllText(localJsonPath);
                     }
                 }
-                
+
                 // If local fetch fails, try to use cache
                 if (string.IsNullOrEmpty(json) && File.Exists(CachePath))
                 {
                     json = File.ReadAllText(CachePath);
                 }
-                
+
                 // If we have json, deserialize and save to cache
                 if (!string.IsNullOrEmpty(json))
                 {
@@ -335,10 +335,10 @@ namespace OpenKh.Tools.ModsManager.Services
                         File.WriteAllText(CachePath, json);
                     }
                     catch { /* Ignore cache saving failures */ }
-                    
+
                     return JsonConvert.DeserializeObject<DownloadableModsData>(json);
                 }
-                
+
                 return null;
             }
             catch (Exception ex)
@@ -411,7 +411,7 @@ namespace OpenKh.Tools.ModsManager.Services
             {
                 using var stream = new MemoryStream(Encoding.UTF8.GetBytes(modYmlContent));
                 var metadata = Metadata.Read(stream);
-                
+
                 var model = new DownloadableModModel
                 {
                     Name = metadata.Title,
@@ -420,7 +420,7 @@ namespace OpenKh.Tools.ModsManager.Services
                     Game = metadata.Game
                     // Añadir más propiedades según sea necesario
                 };
-                
+
                 return model;
             }
             catch (Exception ex)
