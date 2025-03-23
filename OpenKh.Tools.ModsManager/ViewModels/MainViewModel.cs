@@ -411,7 +411,7 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                             progressWindow.Show();
                             return progressWindow;
                         });
-                        await ModsService.InstallMod(name, isZipFile, isLuaFile, progress =>
+                        await ModsService.InstallMod(repositoryName: name, isZip: isZipFile, isLua: isLuaFile, progress =>
                         {
                             Application.Current.Dispatcher.Invoke(() => progressWindow.ProgressText = progress);
                         }, nProgress =>
@@ -455,16 +455,59 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                 {
                     Handle(() =>
                     {
-                        foreach (var filePath in Directory.GetFiles(mod.Path, "*", SearchOption.AllDirectories))
+                        try
                         {
-                            var attributes = File.GetAttributes(filePath);
-                            if (attributes.HasFlag(FileAttributes.ReadOnly))
-                                File.SetAttributes(filePath, attributes & ~FileAttributes.ReadOnly);
-                        }
+                            // Obtener la ruta del directorio del mod
+                            string modPath = mod.Path;
+                            
+                            // Obtener la ruta del directorio del usuario (carpeta padre)
+                            string userDirectoryPath = Path.GetDirectoryName(modPath);
+                            
+                            // Desactivar atributos de solo lectura en todos los archivos
+                            foreach (var filePath in Directory.GetFiles(modPath, "*", SearchOption.AllDirectories))
+                            {
+                                var attributes = File.GetAttributes(filePath);
+                                if (attributes.HasFlag(FileAttributes.ReadOnly))
+                                    File.SetAttributes(filePath, attributes & ~FileAttributes.ReadOnly);
+                            }
 
-                        Directory.Delete(mod.Path, true);
-                        ModsList.RemoveAt(ModsList.IndexOf(SelectedValue));
-                        RefreshDownloadableMods(); // Refrescar la lista de mods descargables después de eliminar un mod
+                            // Eliminar el directorio del mod
+                            System.Diagnostics.Debug.WriteLine($"Eliminando directorio del mod: {modPath}");
+                            Directory.Delete(modPath, true);
+                            
+                            // Verificar si el directorio del usuario ha quedado vacío
+                            if (Directory.Exists(userDirectoryPath) && 
+                                !Directory.EnumerateFileSystemEntries(userDirectoryPath).Any())
+                            {
+                                System.Diagnostics.Debug.WriteLine($"El directorio del usuario está vacío, eliminando: {userDirectoryPath}");
+                                try
+                                {
+                                    Directory.Delete(userDirectoryPath, false);
+                                    System.Diagnostics.Debug.WriteLine($"Directorio del usuario eliminado exitosamente");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"Error al eliminar directorio del usuario: {ex.Message}");
+                                }
+                            }
+                            
+                            // Eliminar el mod de la lista
+                            ModsList.RemoveAt(ModsList.IndexOf(SelectedValue));
+                            RefreshDownloadableMods(); // Refrescar la lista de mods descargables después de eliminar un mod
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error al eliminar mod: {ex.Message}");
+                            MessageBox.Show($"Error al eliminar el mod: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                            
+                            // Intentar eliminar el mod de la lista aunque falle la eliminación del directorio
+                            try
+                            {
+                                ModsList.RemoveAt(ModsList.IndexOf(SelectedValue));
+                                RefreshDownloadableMods();
+                            }
+                            catch { /* Ignorar errores secundarios */ }
+                        }
                     });
                 }
             }, _ => IsModSelected);
@@ -749,7 +792,7 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                             return Task.CompletedTask;
                         }
                     }
-                    if (ConfigurationService.PCVersion == "Steam" && !(_launchGame == "kh3d") && ConfigurationService.SteamAPITrick1525 == false)
+                    else if (ConfigurationService.PCVersion == "Steam" && !(_launchGame == "kh3d") && ConfigurationService.SteamAPITrick1525 == false)
                     {
                         if (ConfigurationService.PcReleaseLocation != null)
                         {
@@ -910,12 +953,40 @@ namespace OpenKh.Tools.ModsManager.ViewModels
 
         public void ReloadModsList()
         {
-            ModsList = new ObservableCollection<ModViewModel>(
-                ModsService.GetMods(ModsService.Mods).Select(Map));
+            var modViewModels = ModsService.GetMods(ModsService.Mods).Select(Map).ToList();
+            
+            // Check for dependencies
+            var installedModNames = modViewModels.Select(m => m.Source).ToList();
+            
+            foreach (var mod in modViewModels)
+            {
+                if (mod.HasDependencies)
+                {
+                    var missingDependencies = mod.Dependencies
+                        .Where(dep => !installedModNames.Contains(dep))
+                        .ToList();
+                    
+                    mod.HasMissingDependencies = missingDependencies.Count > 0;
+                    
+                    if (mod.HasMissingDependencies)
+                    {
+                        Log.Warn("Mod {0} has missing dependencies: {1}", 
+                            mod.Source, 
+                            string.Join(", ", missingDependencies));
+                    }
+                }
+            }
+            
+            // Sort by priority if specified
+            var highPriorityMods = modViewModels.Where(m => m.IsHighPriority).ToList();
+            var normalPriorityMods = modViewModels.Where(m => !m.IsHighPriority && !m.IsLowPriority).ToList();
+            var lowPriorityMods = modViewModels.Where(m => m.IsLowPriority).ToList();
+            
+            modViewModels = highPriorityMods.Concat(normalPriorityMods).Concat(lowPriorityMods).ToList();
+            
+            ModsList = new ObservableCollection<ModViewModel>(modViewModels);
             OnPropertyChanged(nameof(ModsList));
         }
-
-        private ModViewModel Map(ModModel mod) => new ModViewModel(mod, this);
 
         public void ModEnableStateChanged()
         {
@@ -925,6 +996,8 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                 .ToList();
             OnPropertyChanged(nameof(BuildAndRunCommand));
         }
+
+        private ModViewModel Map(ModModel mod) => new ModViewModel(mod, this);
 
         private void MoveSelectedModDown()
         {
@@ -1449,6 +1522,33 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                     FilteredDownloadableModsList.Add(mod);
                 }
             }
+        }
+
+        private void DeleteDirectory(string path)
+        {
+            if (!Directory.Exists(path))
+                return;
+            
+            // Obtener permisos de administrador si es necesario
+            var dirInfo = new DirectoryInfo(path);
+            dirInfo.Attributes = dirInfo.Attributes & ~FileAttributes.ReadOnly;
+            
+            // Eliminar todos los archivos
+            foreach (var file in Directory.GetFiles(path))
+            {
+                var fileInfo = new FileInfo(file);
+                fileInfo.Attributes = fileInfo.Attributes & ~FileAttributes.ReadOnly;
+                fileInfo.Delete();
+            }
+            
+            // Eliminar subdirectorios recursivamente
+            foreach (var dir in Directory.GetDirectories(path))
+            {
+                DeleteDirectory(dir);
+            }
+            
+            // Finalmente eliminar el directorio vacío
+            Directory.Delete(path);
         }
     }
 }

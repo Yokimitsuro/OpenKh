@@ -139,88 +139,54 @@ namespace OpenKh.Tools.ModsManager.Services
                 }
 
                 // Try to get icon.png from main branch first, then master
-                BitmapImage iconImage = null;
-                BitmapImage previewImage = null;
+                string iconUrl = null;
+                string previewUrl = null;
                 try
                 {
-                    byte[] imageBytes = await TryFetchBinaryFile(GetIconUrl(repo));
-
-                    if (imageBytes == null || imageBytes.Length == 0)
+                    // Determinar las URLs de las imágenes en lugar de descargarlas
+                    iconUrl = GetIconUrl(repo);
+                    bool iconExists = await RepositoryService.IsFileExists(iconUrl);
+                    
+                    if (!iconExists)
                     {
-                        imageBytes = await TryFetchBinaryFile($"https://raw.githubusercontent.com/{userName}/{repoName}/master/icon.png");
-                    }
-
-                    if (imageBytes != null && imageBytes.Length > 0)
-                    {
-                        try
+                        iconUrl = $"https://raw.githubusercontent.com/{userName}/{repoName}/master/icon.png";
+                        iconExists = await RepositoryService.IsFileExists(iconUrl);
+                        
+                        if (!iconExists)
                         {
-                            var ms = new MemoryStream(imageBytes);
-                            var image = new BitmapImage();
-                            image.BeginInit();
-                            image.StreamSource = ms;
-                            image.CacheOption = BitmapCacheOption.OnLoad;
-                            image.EndInit();
-                            ms.Position = 0;
-                            iconImage = image;
-
-                            // Guardar la imagen en disco para futuras referencias
-                            string localModPath = Path.Combine(_modDirectoryPath, userName, repoName);
-                            Directory.CreateDirectory(localModPath);
-                            File.WriteAllBytes(Path.Combine(localModPath, "icon.png"), imageBytes);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error creating icon image for {userName}/{repoName}: {ex.Message}");
+                            iconUrl = null;
                         }
                     }
 
-                    // Try to get preview.png
-                    byte[] previewBytes = await TryFetchBinaryFile(GetPreviewUrl(repo));
-
-                    if (previewBytes == null || previewBytes.Length == 0)
+                    // Determinar la URL de la preview
+                    previewUrl = GetPreviewUrl(repo);
+                    bool previewExists = await RepositoryService.IsFileExists(previewUrl);
+                    
+                    if (!previewExists)
                     {
-                        previewBytes = await TryFetchBinaryFile($"https://raw.githubusercontent.com/{userName}/{repoName}/master/preview.png");
-                    }
-
-                    if (previewBytes != null && previewBytes.Length > 0)
-                    {
-                        try
+                        previewUrl = $"https://raw.githubusercontent.com/{userName}/{repoName}/master/preview.png";
+                        previewExists = await RepositoryService.IsFileExists(previewUrl);
+                        
+                        if (!previewExists)
                         {
-                            var ms = new MemoryStream(previewBytes);
-                            var image = new BitmapImage();
-                            image.BeginInit();
-                            image.StreamSource = ms;
-                            image.CacheOption = BitmapCacheOption.OnLoad;
-                            image.EndInit();
-                            ms.Position = 0;
-                            previewImage = image;
-
-                            // Guardar la imagen en disco para futuras referencias
-                            string localModPath = Path.Combine(_modDirectoryPath, userName, repoName);
-                            Directory.CreateDirectory(localModPath);
-                            File.WriteAllBytes(Path.Combine(localModPath, "preview.png"), previewBytes);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error creating preview image for {userName}/{repoName}: {ex.Message}");
+                            previewUrl = null;
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Error fetching icon for {repo}: {ex.Message}");
-                    // Continue without icon
+                    Debug.WriteLine($"Error checking image URLs for {userName}/{repoName}: {ex.Message}");
                 }
 
                 return new DownloadableModModel
                 {
                     Repository = repo,
-                    Name = metadata.Title ?? "Unknown",
+                    Name = metadata.Title ?? repoName,
                     Author = metadata.OriginalAuthor ?? userName,
-                    Description = metadata.Description ?? repoDescription ?? $"A mod for {metadata.Game ?? "Kingdom Hearts"}",
+                    Description = string.IsNullOrEmpty(metadata.Description) ? repoDescription : metadata.Description,
                     Game = metadata.Game,
-                    IconImageSource = null, // No used
-                    PreviewImageSource = null, // Not used
+                    IconImageSource = iconUrl,
+                    PreviewImageSource = previewUrl
                 };
             }
             catch (Exception ex)
@@ -352,6 +318,53 @@ namespace OpenKh.Tools.ModsManager.Services
         {
             try
             {
+                // Obtener metadata del mod para verificar dependencias
+                progressOutput?.Invoke($"Checking mod information from {repo}...");
+                Metadata modMetadata = await GetModMetadata(repo);
+
+                if (modMetadata != null && modMetadata.Dependencies != null && modMetadata.Dependencies.Count > 0)
+                {
+                    // Hay dependencias, preguntar al usuario si quiere instalarlas
+                    var dependenciesList = string.Join(", ", modMetadata.Dependencies.Select(d => d.Name));
+                    var message = $"This mod requires the following dependencies:\n{dependenciesList}\n\nDo you want to install these dependencies first?";
+
+                    var result = MessageBox.Show(
+                        message,
+                        "Dependencies Required",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        // Instalar dependencias
+                        progressOutput?.Invoke($"Installing dependencies...");
+
+                        // Determinar el orden de instalación basado en la prioridad
+                        var installBefore = modMetadata.Priority?.ToLower() == "above";
+
+                        if (installBefore)
+                        {
+                            // Si el mod tiene prioridad "above", instalar dependencias primero
+                            await InstallDependencies(modMetadata.Dependencies, progressOutput);
+                            progressOutput?.Invoke($"Dependencies installed. Installing main mod...");
+                        }
+
+                        // Instalar el mod principal
+                        progressOutput?.Invoke($"Installing mod from {repo}...");
+                        await ModsService.InstallMod(repo, false, false, progressOutput);
+
+                        if (!installBefore)
+                        {
+                            // Si el mod tiene prioridad "below" o no especificada, instalar dependencias después
+                            await InstallDependencies(modMetadata.Dependencies, progressOutput);
+                        }
+
+                        progressOutput?.Invoke($"Mod and dependencies installed successfully!");
+                        return true;
+                    }
+                }
+
+                // No hay dependencias o el usuario no quiere instalarlas
                 progressOutput?.Invoke($"Installing mod from {repo}...");
                 await ModsService.InstallMod(repo, false, false, progressOutput);
                 progressOutput?.Invoke($"Mod installed successfully!");
@@ -361,6 +374,60 @@ namespace OpenKh.Tools.ModsManager.Services
             {
                 progressOutput?.Invoke($"Error installing mod: {ex.Message}");
                 return false;
+            }
+        }
+
+        // Método para instalar dependencias
+        private static async Task InstallDependencies(List<Metadata.Dependency> dependencies, Action<string> progressOutput)
+        {
+            foreach (var dependency in dependencies)
+            {
+                progressOutput?.Invoke($"Installing dependency: {dependency.Name}");
+                try
+                {
+                    await ModsService.InstallMod(dependency.Name, false, false, progressOutput);
+                    progressOutput?.Invoke($"Dependency {dependency.Name} installed successfully");
+                }
+                catch (Exception ex)
+                {
+                    progressOutput?.Invoke($"Warning: Could not install dependency {dependency.Name}: {ex.Message}");
+                }
+            }
+        }
+
+        // Método para obtener la metadata de un mod antes de instalarlo
+        public static async Task<Metadata> GetModMetadata(string repo)
+        {
+            try
+            {
+                string metadataUrl = GetMetadataJsonUrl(repo);
+                string yamlContent = await TryFetchFile(metadataUrl);
+
+                if (string.IsNullOrEmpty(yamlContent))
+                {
+                    var path = repo.Split('/');
+                    if (path.Length == 2)
+                    {
+                        string userName = path[0];
+                        string repoName = path[1];
+                        yamlContent = await TryFetchFile($"https://raw.githubusercontent.com/{userName}/{repoName}/master/mod.yml");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(yamlContent))
+                {
+                    using (var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(yamlContent)))
+                    {
+                        return Metadata.Read(ms);
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error fetching mod metadata for {repo}: {ex.Message}");
+                return null;
             }
         }
 

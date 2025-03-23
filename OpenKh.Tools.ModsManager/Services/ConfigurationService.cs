@@ -85,6 +85,11 @@ namespace OpenKh.Tools.ModsManager.Services
             public string Label { get; set; }
             public string GameDataPath { get; set; }
             public string ModYmlFilePath { get; set; }
+            
+            // Properties for mod.yml advanced options
+            public string SelectedPriority { get; set; }
+            public bool GlowTextureMode { get; set; }
+            public string DependenciesList { get; set; }
 
             public override string ToString() => Label;
         }
@@ -187,7 +192,25 @@ namespace OpenKh.Tools.ModsManager.Services
 
         public static string ModCollectionPath
         {
-            get => _config.ModCollectionPath ?? Path.GetFullPath(Path.Combine(StoragePath, "mods", LaunchGame));
+            get
+            {
+                // Si hay una ruta explícitamente configurada, usarla
+                if (!string.IsNullOrEmpty(_config.ModCollectionPath))
+                    return _config.ModCollectionPath;
+                
+                // Obtener la ruta del ejecutable
+                string execPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                string execDir = Path.GetDirectoryName(execPath);
+                string modsPath = Path.Combine(execDir, "mods", LaunchGame);
+                
+                System.Diagnostics.Debug.WriteLine($"Usando ruta de mods: {modsPath}");
+                
+                // Asegurarse de que el directorio existe
+                Directory.CreateDirectory(Path.Combine(execDir, "mods"));
+                Directory.CreateDirectory(modsPath);
+                
+                return modsPath;
+            }
             set
             {
                 _config.ModCollectionPath = value;

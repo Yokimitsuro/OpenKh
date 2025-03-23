@@ -31,8 +31,28 @@
         </StackPanel>
         <Image MaxWidth="256" MaxHeight="144" Margin="0 3 0 3" Source="{Binding PreviewImage}" Visibility="{Binding PreviewImageVisibility}"/>
         <TextBlock Margin="0 0 0 3" TextWrapping="Wrap" Text="{Binding Description}"/>
+        
+        <!-- Priority warning -->
+        <Border Margin="0 3 0 3" Padding="5" Background="{Binding PriorityBackground}" 
+                Visibility="{Binding PriorityVisibility}" CornerRadius="3">
+            <TextBlock Foreground="White" FontWeight="Bold" TextWrapping="Wrap" 
+                       Text="{Binding PriorityMessage}"/>
+        </Border>
+        
+        <!-- Dependencies warning -->
+        <Border Margin="0 3 0 3" Padding="5" Background="DarkRed" 
+                Visibility="{Binding MissingDependenciesVisibility}" CornerRadius="3">
+            <TextBlock Foreground="White" FontWeight="Bold" TextWrapping="Wrap" 
+                       Text="{Binding MissingDependenciesMessage}"/>
+        </Border>
+        
+        <!-- Dependencies list -->
+        <Expander Header="Dependencies" Visibility="{Binding DependenciesVisibility}" Margin="0 3 0 3">
+            <TextBlock Text="{Binding DependenciesList}" TextWrapping="Wrap"/>
+        </Expander>
+        
         <StackPanel Visibility="{Binding SourceVisibility}">
-                <TextBlock Margin="0 0 0 3">
+            <TextBlock Margin="0 0 0 3">
                 <Hyperlink NavigateUri="{Binding SourceUrl}" TextDecorations="{x:Null}" RequestNavigate="Hyperlink_RequestNavigate">
                     <TextBlock Text="Mod source code" Foreground="{DynamicResource textHyperlink}"/>
                 </Hyperlink>

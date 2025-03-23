@@ -74,6 +74,25 @@ namespace OpenKh.Tools.ModsManager.Views
                 mod.OriginalAuthor ??= "You";
                 mod.Description ??= $"Generated on {DateTime.UtcNow:R}";
                 mod.Assets ??= new List<AssetFile>();
+                
+                // Set new properties from the UI
+                // Set Priority if selected
+                if (!string.IsNullOrEmpty(VM.SelectedPriority))
+                {
+                    mod.Priority = VM.SelectedPriority;
+                }
+                
+                // Set GlowTextureMode if enabled
+                mod.GlowTextureMode = VM.GlowTextureMode;
+                
+                // Set Dependencies if any are specified
+                if (!string.IsNullOrEmpty(VM.DependenciesList))
+                {
+                    mod.Dependencies = VM.DependenciesList
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(dep => new Metadata.Dependency { Name = dep.Trim() })
+                        .ToList();
+                }
 
                 await action(mod);
 
@@ -656,6 +675,43 @@ namespace OpenKh.Tools.ModsManager.Views
                     task => VM.GeneratingTask = task
                 );
 
+            void LoadPref(ConfigurationService.YamlGenPref pref)
+            {
+                VM.GameDataPath = pref.GameDataPath;
+                VM.ModYmlFilePath = pref.ModYmlFilePath;
+
+                // If the mod.yml exists, try to load its advanced settings
+                if (File.Exists(pref.ModYmlFilePath))
+                {
+                    try
+                    {
+                        var metadata = Metadata.Read(new FileStream(pref.ModYmlFilePath, FileMode.Open, FileAccess.Read));
+                        if (metadata != null)
+                        {
+                            // Set the priority dropdown
+                            VM.SelectedPriority = metadata.Priority ?? "";
+                            
+                            // Set the glow texture mode checkbox
+                            VM.GlowTextureMode = metadata.GlowTextureMode;
+                            
+                            // Set the dependencies list text
+                            if (metadata.Dependencies != null && metadata.Dependencies.Any())
+                            {
+                                VM.DependenciesList = string.Join(",\n", metadata.Dependencies.Select(d => d.Name));
+                            }
+                            else
+                            {
+                                VM.DependenciesList = "";
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore errors when trying to load existing mod.yml
+                    }
+                }
+            }
+
             var toolIsGood = new BehaviorSubject<bool>(false);
 
             var vmPropertyChanged = Observable.FromEvent<PropertyChangedEventHandler, PropertyChangedEventArgs>(
@@ -741,12 +797,6 @@ namespace OpenKh.Tools.ModsManager.Views
                     .ToArray();
             }
 
-            void LoadPref(ConfigurationService.YamlGenPref pref)
-            {
-                VM.GameDataPath = pref.GameDataPath;
-                VM.ModYmlFilePath = pref.ModYmlFilePath;
-            }
-
             VM.LoadPrefCommand = new RelayCommand(
                 _ =>
                 {
@@ -775,6 +825,9 @@ namespace OpenKh.Tools.ModsManager.Views
                             Label = VM.PrefLabel,
                             GameDataPath = VM.GameDataPath,
                             ModYmlFilePath = VM.ModYmlFilePath,
+                            SelectedPriority = VM.SelectedPriority,
+                            GlowTextureMode = VM.GlowTextureMode,
+                            DependenciesList = VM.DependenciesList
                         }
                     );
                     ConfigurationService.YamlGenPrefs = prefList;

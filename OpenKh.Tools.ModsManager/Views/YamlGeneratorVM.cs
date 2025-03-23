@@ -116,6 +116,58 @@ namespace OpenKh.Tools.ModsManager.Views
         }
         #endregion
 
+        #region PriorityOptions
+        private List<string> _priorityOptions = new List<string> { "", "ABOVE", "BELOW" };
+        public List<string> PriorityOptions
+        {
+            get => _priorityOptions;
+            set
+            {
+                _priorityOptions = value;
+                OnPropertyChanged(nameof(PriorityOptions));
+            }
+        }
+        #endregion
+
+        #region SelectedPriority
+        private string _selectedPriority = "";
+        public string SelectedPriority
+        {
+            get => _selectedPriority;
+            set
+            {
+                _selectedPriority = value;
+                OnPropertyChanged(nameof(SelectedPriority));
+            }
+        }
+        #endregion
+
+        #region DependenciesList
+        private string _dependenciesList = "";
+        public string DependenciesList
+        {
+            get => _dependenciesList;
+            set
+            {
+                _dependenciesList = value;
+                OnPropertyChanged(nameof(DependenciesList));
+            }
+        }
+        #endregion
+
+        #region GlowTextureMode
+        private bool _glowTextureMode = false;
+        public bool GlowTextureMode
+        {
+            get => _glowTextureMode;
+            set
+            {
+                _glowTextureMode = value;
+                OnPropertyChanged(nameof(GlowTextureMode));
+            }
+        }
+        #endregion
+
         #region Tools
         private IEnumerable<GetDiffService> _tools = Enumerable.Empty<GetDiffService>();
         public IEnumerable<GetDiffService> Tools

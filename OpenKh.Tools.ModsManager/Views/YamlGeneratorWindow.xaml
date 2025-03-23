@@ -20,67 +20,99 @@
                 <Setter Property="Foreground" Value="{Binding ColorTheme.TextColor}"/>
             </Style>
         </DockPanel.Resources>
-        <StackPanel Orientation="Vertical">
-            <GroupBox Header="About">
-                <TextBlock TextWrapping="Wrap">YamlGenerator is an embedded tool. Provide a rapid crafting tools to satisfy mod.yml. This is a specialized utility for mod authors.</TextBlock>
-            </GroupBox>
-            <GroupBox Header="Preferences">
-                <StackPanel>
-                    <TextBlock TextWrapping="Wrap">Load and save the fields of: <Italic>mod.yml</Italic> and <Italic>GameDataPath</Italic></TextBlock>
-                    <StackPanel Orientation="Horizontal">
-                        <ComboBox ItemsSource="{Binding Prefs}" VerticalAlignment="Center" IsEditable="True" Width="200"
-                          Text="{Binding PrefLabel,UpdateSourceTrigger=PropertyChanged}"
-                          SelectedItem="{Binding SelectedPref}"
-                          >
+        
+        <!-- Added ScrollViewer around the content -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Orientation="Vertical">
+                <GroupBox Header="About">
+                    <TextBlock TextWrapping="Wrap">YamlGenerator is an embedded tool. Provide a rapid crafting tools to satisfy mod.yml. This is a specialized utility for mod authors.</TextBlock>
+                </GroupBox>
+                <GroupBox Header="Preferences">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap">Load and save the fields of: <Italic>mod.yml</Italic> and <Italic>GameDataPath</Italic></TextBlock>
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding Prefs}" VerticalAlignment="Center" IsEditable="True" Width="200"
+                              Text="{Binding PrefLabel,UpdateSourceTrigger=PropertyChanged}"
+                              SelectedItem="{Binding SelectedPref}"
+                              >
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock />
+                            <Button Content="Load from it" Command="{Binding LoadPrefCommand}" HorizontalAlignment="Left" Padding="7" />
+                            <TextBlock />
+                            <Button Content="Save to it" Command="{Binding SavePrefCommand}" HorizontalAlignment="Left" Padding="7" />
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Header="mod.yml">
+                    <StackPanel>
+                        <TextBlock >Enter the file path to <Italic>mod.yml</Italic></TextBlock>
+                        <userControls:SaveFileSelectorControl FilePath="{Binding ModYmlFilePath,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}"
+                                                      Filter="mod.yml|mod.yml|*|*" />
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Header="Diff tool selection">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap">You can select a diff tool to see changes for <Italic>mod.yml</Italic></TextBlock>
+                        <ComboBox ItemsSource="{Binding Tools}" SelectedItem="{Binding SelectedTool}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding Label}" />
+                                    <TextBlock Text="{Binding Name}" />
                                 </DataTemplate>
                             </ComboBox.ItemTemplate>
                         </ComboBox>
-                        <TextBlock />
-                        <Button Content="Load from it" Command="{Binding LoadPrefCommand}" HorizontalAlignment="Left" Padding="7" />
-                        <TextBlock />
-                        <Button Content="Save to it" Command="{Binding SavePrefCommand}" HorizontalAlignment="Left" Padding="7" />
                     </StackPanel>
-                </StackPanel>
-            </GroupBox>
-            <GroupBox Header="mod.yml">
-                <StackPanel>
-                    <TextBlock >Enter the file path to <Italic>mod.yml</Italic></TextBlock>
-                    <userControls:SaveFileSelectorControl FilePath="{Binding ModYmlFilePath,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}"
-                                                      Filter="mod.yml|mod.yml|*|*" />
-                </StackPanel>
-            </GroupBox>
-            <GroupBox Header="Diff tool selection">
-                <StackPanel>
-                    <TextBlock TextWrapping="Wrap">You can select a diff tool to see changes for <Italic>mod.yml</Italic></TextBlock>
-                    <ComboBox ItemsSource="{Binding Tools}" SelectedItem="{Binding SelectedTool}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Name}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-                </StackPanel>
-            </GroupBox>
-            <GroupBox Header="Generator" Padding="7">
-                <StackPanel>
-                    <TextBlock TextWrapping="Wrap">This generator will construct an initial <Italic>mod.yml</Italic> for you.</TextBlock>
-                    <Button Content="Generate or update mod.yml" Command="{Binding GenerateCommand}" HorizontalAlignment="Left" Padding="7" />
-                    <userControls:TaskStatusObserverControl Padding="3" Task="{Binding GeneratingTask}" />
-                </StackPanel>
-            </GroupBox>
-            <GroupBox Header="Target files appender" Padding="7">
-                <StackPanel>
-                    <TextBlock TextWrapping="Wrap">This appender will copy the source files from <Italic>GameDataPath</Italic> into <Italic>mod.yml</Italic>. After copy process, you can edit the copied files for modding purpose.</TextBlock>
-                    <TextBlock>GameDataPath</TextBlock>
-                    <userControls:FolderSelectorControl FolderPath="{Binding GameDataPath,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" />
-                    <TextBlock />
-                    <Button Content="Begin" Command="{Binding AppenderCommand}" HorizontalAlignment="Left" Padding="7" />
-                    <userControls:TaskStatusObserverControl Padding="3" Task="{Binding AppenderTask}" />
-                </StackPanel>
-            </GroupBox>
-        </StackPanel>
+                </GroupBox>
+                <GroupBox Header="Generator" Padding="7">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap">This generator will construct an initial <Italic>mod.yml</Italic> for you.</TextBlock>
+                        <Button Content="Generate or update mod.yml" Command="{Binding GenerateCommand}" HorizontalAlignment="Left" Padding="7" />
+                        <userControls:TaskStatusObserverControl Padding="3" Task="{Binding GeneratingTask}" />
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Header="Advanced Options" Padding="7">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap">Configure additional options for your mod.</TextBlock>
+                        
+                        <!-- Priority Selection -->
+                        <TextBlock Margin="0,5,0,0">Installation Priority:</TextBlock>
+                        <ComboBox Margin="0,2,0,5" SelectedItem="{Binding SelectedPriority}" ItemsSource="{Binding PriorityOptions}"/>
+                        <TextBlock TextWrapping="Wrap" FontStyle="Italic" Margin="0,0,0,10">
+                            Priority determines installation order. ABOVE means your mod should be installed before others,
+                            while BELOW means it should be installed after others.
+                        </TextBlock>
+                        
+                        <!-- Dependencies -->
+                        <TextBlock Margin="0,5,0,0">Dependencies (Repo paths separated by comma):</TextBlock>
+                        <TextBox Margin="0,2,0,5" Text="{Binding DependenciesList}" AcceptsReturn="True" Height="60"/>
+                        <TextBlock TextWrapping="Wrap" FontStyle="Italic" Margin="0,0,0,10">
+                            List dependencies as "username/repository" separated by commas. 
+                            These are mods required for your mod to function correctly.
+                        </TextBlock>
+                        
+                        <!-- GlowTextureMode -->
+                        <CheckBox Margin="0,5,0,2" Content="Enable Glow Texture Mode" IsChecked="{Binding GlowTextureMode}"/>
+                        <TextBlock TextWrapping="Wrap" FontStyle="Italic" Margin="0,0,0,10">
+                            For mods with remastered textures, this alters how transparency is handled.
+                            Enable this if your textures have transparency that should glow.
+                        </TextBlock>
+                    </StackPanel>
+                </GroupBox>
+                <GroupBox Header="Target files appender" Padding="7">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap">This appender will copy the source files from <Italic>GameDataPath</Italic> into <Italic>mod.yml</Italic>. After copy process, you can edit the copied files for modding purpose.</TextBlock>
+                        <TextBlock>GameDataPath</TextBlock>
+                        <userControls:FolderSelectorControl FolderPath="{Binding GameDataPath,Mode=TwoWay,UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock />
+                        <Button Content="Begin" Command="{Binding AppenderCommand}" HorizontalAlignment="Left" Padding="7" />
+                        <userControls:TaskStatusObserverControl Padding="3" Task="{Binding AppenderTask}" />
+                    </StackPanel>
+                </GroupBox>
+            </StackPanel>
+        </ScrollViewer>
     </DockPanel>
 </Window>

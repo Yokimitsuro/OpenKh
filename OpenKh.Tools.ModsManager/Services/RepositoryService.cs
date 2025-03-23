@@ -48,6 +48,18 @@ namespace OpenKh.Tools.ModsManager.Services
             return response.StatusCode == HttpStatusCode.OK;
         }
 
+        public static async Task<string> DownloadFile(string repositoryName, string branch, string filePath)
+        {
+            string url = $"https://raw.githubusercontent.com/{repositoryName}/{branch}/{filePath}";
+            using var client = new HttpClient();
+            using var response = await client.GetAsync(url);
+            
+            if (response.StatusCode != HttpStatusCode.OK)
+                throw new Exception($"Could not download file {filePath} from repository {repositoryName}. Status code: {response.StatusCode}");
+                
+            return await response.Content.ReadAsStringAsync();
+        }
+
         public static Task<int> FetchUpdate(string path) => Task.Run(() =>
         {
             if (!Repository.IsValid(path))

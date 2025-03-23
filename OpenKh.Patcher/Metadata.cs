@@ -22,6 +22,13 @@ namespace OpenKh.Patcher
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Game { get; set; }
         [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public int Specifications { get; set; }
         public List<Dependency> Dependencies { get; set; }
+        [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public string Priority { get; set; }
+        /// <summary>
+        /// When true, remastered textures will use the glow texture offset (0x40000000) instead of 
+        /// the regular texture offset (0x20000000). This is useful for textures that need to maintain
+        /// their transparency properly in the remastered version.
+        /// </summary>
+        [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)] public bool GlowTextureMode { get; set; }
         public List<AssetFile> Assets { get; set; }
 
         private static readonly IDeserializer deserializer =

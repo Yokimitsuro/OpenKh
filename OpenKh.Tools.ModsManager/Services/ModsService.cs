@@ -2,6 +2,7 @@ using LibGit2Sharp;
 using OpenKh.Common;
 using OpenKh.Patcher;
 using OpenKh.Tools.ModsManager.Exceptions;
+using OpenKh.Tools.ModsManager.Extensions;
 using OpenKh.Tools.ModsManager.Models;
 using OpenKh.Tools.ModsManager.ViewModels;
 using System;
@@ -102,24 +103,284 @@ namespace OpenKh.Tools.ModsManager.Services
         public static bool IsUserBlocked(string repositoryName) =>
             IsModBlocked(Path.GetDirectoryName(repositoryName));
 
-        public static Task InstallMod(
+        public static async Task InstallMod(
             string name,
-            bool isZipFile,
-            bool isLuaFile,
+            bool zip = false,
+            bool lua = false,
             Action<string> progressOutput = null,
             Action<float> progressNumber = null)
         {
-            if (!isZipFile && !isLuaFile)
+            if (zip)
             {
-                return Task.Run(() => InstallModFromGithub(name, progressOutput, progressNumber));
+                await Task.Run(() => InstallModFromZip(name, progressOutput, progressNumber));
+                return;
             }
-            else if (isZipFile && !isLuaFile)
+            else if (lua)
             {
-                return Task.Run(() => InstallModFromZip(name, progressOutput, progressNumber));
+                await Task.Run(() => InstallModFromLua(name));
+                return;
             }
             else
             {
-                return Task.Run(() => InstallModFromLua(name));
+                try 
+                {
+                    // Primero instalar el mod principal
+                    progressOutput?.Invoke($"Installing main mod: {name}");
+                    await InstallModFromGithub(name, progressOutput, progressNumber);
+                    
+                    // Verificar si el mod tiene un mod.yml válido
+                    string modName = name;
+                    string modPath = "";
+                    
+                    if (name.Contains("/"))
+                    {
+                        string[] parts = name.Split('/');
+                        if (parts.Length == 2)
+                        {
+                            string userName = parts[0];
+                            string repoName = parts[1];
+                            modPath = Path.Combine(ConfigurationService.ModCollectionPath, userName, repoName);
+                        }
+                        else
+                        {
+                            modPath = GetModPath(name);
+                        }
+                    }
+                    else
+                    {
+                        modPath = GetModPath(name);
+                    }
+                    
+                    if (!Directory.Exists(modPath))
+                    {
+                        progressOutput?.Invoke($"Error: Mod directory not found after installation: {modPath}");
+                        return;
+                    }
+                    
+                    string modYmlPath = Path.Combine(modPath, "mod.yml");
+                    
+                    // Intentar obtener el metadata para las dependencias
+                    Metadata metadata = null;
+                    if (File.Exists(modYmlPath))
+                    {
+                        try
+                        {
+                            progressOutput?.Invoke($"Loading mod.yml for dependency analysis...");
+                            metadata = Metadata.Read(modYmlPath);
+                        }
+                        catch (Exception ex)
+                        {
+                            progressOutput?.Invoke($"Warning: Error reading mod.yml file: {ex.Message}");
+                            File.Delete(modYmlPath); // Eliminar el archivo corrupto
+                            metadata = null;
+                        }
+                    }
+                    
+                    // Si el metadata es nulo o no hay mod.yml, crear uno básico
+                    if (metadata == null || !File.Exists(modYmlPath))
+                    {
+                        progressOutput?.Invoke($"Warning: Valid mod.yml not found. Creating a basic one...");
+                        
+                        var metadata1 = new Metadata
+                        {
+                            Title = name.Contains("/") ? name.Split('/')[1] : name,
+                            Description = "Auto-generated mod metadata",
+                            Game = "kh2", // Valor predeterminado
+                            Author = name.Contains("/") ? name.Split('/')[0] : "Unknown",
+                            Version = "1.0"
+                        };
+                        
+                        // Guardar el archivo generado
+                        using (var stream = File.Create(modYmlPath))
+                        {
+                            Metadata.Write(stream, metadata1);
+                        }
+                        progressOutput?.Invoke($"Created basic mod.yml file at: {modYmlPath}");
+                        
+                        // Recargar metadata
+                        try {
+                            metadata = Metadata.Read(modYmlPath);
+                        }
+                        catch (Exception ex) {
+                            progressOutput?.Invoke($"Error creating mod.yml: {ex.Message}");
+                            return;
+                        }
+                    }
+                    
+                    // Ahora instalar dependencias si existen
+                    if (metadata?.Dependencies != null && metadata.Dependencies.Count > 0)
+                    {
+                        progressOutput?.Invoke($"Installing {metadata.Dependencies.Count} dependencies...");
+                        await InstallDependencies(metadata.Dependencies, progressOutput, progressNumber);
+                    }
+                    else
+                    {
+                        progressOutput?.Invoke("No dependencies to install.");
+                    }
+                    
+                    // Final de la instalación
+                    progressOutput?.Invoke($"Mod {name} installed successfully!");
+                    progressNumber?.Invoke(1.0f);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    progressOutput?.Invoke($"Error during installation: {ex.Message}");
+                    throw;
+                }
+            }
+        }
+        
+        // Método para instalar dependencias
+        private static async Task InstallDependencies(List<Metadata.Dependency> dependencies, Action<string> progressOutput = null, Action<float> progressNumber = null)
+        {
+            if (dependencies == null || dependencies.Count == 0)
+                return;
+
+            // Obtener la lista de mods instalados
+            var installedMods = GetAllMods().ToList();
+            
+            foreach (var dependency in dependencies)
+            {
+                try
+                {
+                    // Comprobar si la dependencia ya está instalada
+                    bool isAlreadyInstalled = installedMods.Any(mod => 
+                        mod.Metadata?.Title?.Equals(dependency.Name, StringComparison.OrdinalIgnoreCase) == true ||
+                        mod.Name?.Equals(dependency.Name, StringComparison.OrdinalIgnoreCase) == true);
+
+                    if (isAlreadyInstalled)
+                    {
+                        progressOutput?.Invoke($"Dependency {dependency.Name} is already installed. Skipping.");
+                        continue;
+                    }
+
+                    progressOutput?.Invoke($"Installing dependency: {dependency.Name}");
+                    
+                    // Verificar si el nombre de la dependencia tiene el formato de repositorio de GitHub (usuario/repo)
+                    string repoName = dependency.Name;
+                    if (!repoName.Contains("/"))
+                    {
+                        progressOutput?.Invoke($"Warning: Dependency name '{repoName}' does not appear to be a valid GitHub repository name (should be in format 'username/repository').");
+                        continue;
+                    }
+                    
+                    try 
+                    {
+                        // Crear el directorio del mod primero
+                        var path = repoName.Split('/');
+                        if (path.Length == 2)
+                        {
+                            var modPath = Path.Combine(ConfigurationService.ModCollectionPath, path[0], path[1]);
+                            
+                            // Verificar si ya existe y eliminarlo
+                            if (Directory.Exists(modPath))
+                            {
+                                progressOutput?.Invoke($"Dependency {dependency.Name} directory already exists. Removing it...");
+                                
+                                try
+                                {
+                                    // Quitar atributos de solo lectura
+                                    foreach (var filePath in Directory.GetFiles(modPath, "*", SearchOption.AllDirectories))
+                                    {
+                                        var attributes = File.GetAttributes(filePath);
+                                        if (attributes.HasFlag(FileAttributes.ReadOnly))
+                                            File.SetAttributes(filePath, attributes & ~FileAttributes.ReadOnly);
+                                    }
+                                    
+                                    // Eliminar directorio
+                                    Directory.Delete(modPath, true);
+                                    
+                                    // Verificar que se haya eliminado
+                                    if (Directory.Exists(modPath))
+                                    {
+                                        progressOutput?.Invoke($"Warning: Could not remove existing dependency directory");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    progressOutput?.Invoke($"Warning: Error removing existing dependency: {ex.Message}");
+                                }
+                            }
+                            
+                            // Crear el directorio si no existe o fue eliminado
+                            if (!Directory.Exists(modPath))
+                            {
+                                progressOutput?.Invoke($"Creating dependency directory: {modPath}");
+                                Directory.CreateDirectory(modPath);
+                            }
+                            
+                            // Configurar opciones de clon
+                            var options = new CloneOptions
+                            {
+                                RecurseSubmodules = true
+                            };
+                            
+                            await Task.Run(() => {
+                                try
+                                {
+                                    Repository.Clone($"https://github.com/{repoName}", modPath, options);
+                                    
+                                    // Verificar si existe el archivo mod.yml después de clonar
+                                    string modYmlPath = Path.Combine(modPath, "mod.yml");
+                                    
+                                    if (!File.Exists(modYmlPath))
+                                    {
+                                        progressOutput?.Invoke($"Warning: mod.yml file not found in dependency. Generating a basic mod.yml file.");
+                                        
+                                        // Crear un archivo mod.yml básico
+                                        var metadata = new Metadata
+                                        {
+                                            Title = repoName.Split('/')[1],
+                                            Description = "Auto-generated dependency metadata",
+                                            Game = "kh2", // Valor predeterminado
+                                            Author = repoName.Split('/')[0],
+                                            Version = "1.0"
+                                        };
+                                        
+                                        // Guardar el archivo generado
+                                        using (var stream = File.Create(modYmlPath))
+                                        {
+                                            Metadata.Write(stream, metadata);
+                                        }
+                                        progressOutput?.Invoke($"Created basic mod.yml file for dependency at: {modYmlPath}");
+                                    }
+                                    
+                                    progressOutput?.Invoke($"Dependency {dependency.Name} installed successfully");
+                                }
+                                catch (Exception ex)
+                                {
+                                    progressOutput?.Invoke($"Error cloning dependency: {ex.Message}");
+                                    
+                                    // Intentar limpiar el directorio si falló la clonación
+                                    try
+                                    {
+                                        if (Directory.Exists(modPath))
+                                        {
+                                            Directory.Delete(modPath, true);
+                                        }
+                                    }
+                                    catch { /* Ignorar errores de limpieza */ }
+                                    
+                                    throw;
+                                }
+                            });
+                        }
+                        else
+                        {
+                            progressOutput?.Invoke($"Warning: Invalid repository format for {repoName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Manejo específico para errores
+                        progressOutput?.Invoke($"Warning: Could not install dependency {dependency.Name}: {ex.Message}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    progressOutput?.Invoke($"Warning: Error processing dependency {dependency.Name}: {ex.Message}");
+                }
             }
         }
 
@@ -195,39 +456,39 @@ namespace OpenKh.Tools.ModsManager.Services
 
             if (isModPatch)
             {
-                var _yamlGen = new Metadata();
+                var metadata = new Metadata();
                 if (fileName.ToLower().Contains(".kh2pcpatch"))
                 {
-                    _yamlGen.Title = modName + " (KH2PCPATCH)";
-                    _yamlGen.Game = "kh2";
-                    _yamlGen.Description = "This is an automatically generated metadata for this KH2PCPATCH Modification.";
+                    metadata.Title = modName + " (KH2PCPATCH)";
+                    metadata.Game = "kh2";
+                    metadata.Description = "This is an automatically generated metadata for this KH2PCPATCH Modification.";
                 }
                 else if (fileName.ToLower().Contains(".kh1pcpatch"))
                 {
-                    _yamlGen.Title = modName + " (KH1PCPATCH)";
-                    _yamlGen.Game = "kh1";
-                    _yamlGen.Description = "This is an automatically generated metadata for this KH1PCPATCH Modification.";
+                    metadata.Title = modName + " (KH1PCPATCH)";
+                    metadata.Game = "kh1";
+                    metadata.Description = "This is an automatically generated metadata for this KH1PCPATCH Modification.";
                 }
                 else if (fileName.ToLower().Contains(".compcpatch"))
                 {
-                    _yamlGen.Title = modName + " (COMPCPATCH)";
-                    _yamlGen.Game = "Recom";
-                    _yamlGen.Description = "This is an automatically generated metadata for this COMPCPATCH Modification.";
+                    metadata.Title = modName + " (COMPCPATCH)";
+                    metadata.Game = "Recom";
+                    metadata.Description = "This is an automatically generated metadata for this COMPCPATCH Modification.";
                 }
                 else if (fileName.ToLower().Contains(".bbspcpatch"))
                 {
-                    _yamlGen.Title = modName + " (BBSPCPATCH)";
-                    _yamlGen.Game = "bbs";
-                    _yamlGen.Description = "This is an automatically generated metadata for this BBSPCPATCH Modification.";
+                    metadata.Title = modName + " (BBSPCPATCH)";
+                    metadata.Game = "bbs";
+                    metadata.Description = "This is an automatically generated metadata for this BBSPCPATCH Modification.";
                 }
                 else if (fileName.ToLower().Contains(".dddpcpatch"))
                 {
-                    _yamlGen.Title = modName + " (DDDPCPATCH)";
-                    _yamlGen.Game = "kh3d";
-                    _yamlGen.Description = "This is an automatically generated metadata for this DDDPCPATCH Modification.";
+                    metadata.Title = modName + " (DDDPCPATCH)";
+                    metadata.Game = "kh3d";
+                    metadata.Description = "This is an automatically generated metadata for this DDDPCPATCH Modification.";
                 }
-                _yamlGen.OriginalAuthor = "Unknown";
-                _yamlGen.Assets = new List<AssetFile>();
+                metadata.OriginalAuthor = "Unknown";
+                metadata.Assets = new List<AssetFile>();
 
                 foreach (var entry in zipFile.Entries.Where(x => (x.ExternalAttributes & 0x10) != 0x10))
                 {
@@ -254,12 +515,15 @@ namespace OpenKh.Tools.ModsManager.Services
                     _assetFile.Source = new List<AssetFile>() { _assetSource };
                     _assetFile.Platform = "pc";
 
-                    _yamlGen.Assets.Add(_assetFile);
+                    metadata.Assets.Add(_assetFile);
                 }
 
                 var _yamlPath = Path.Combine(modPath + "/mod.yml");
 
-                File.WriteAllText(_yamlPath, _yamlGen.ToString());
+                using (var stream = File.Create(_yamlPath))
+                {
+                    Metadata.Write(stream, metadata);
+                }
             }
         }
 
@@ -268,74 +532,212 @@ namespace OpenKh.Tools.ModsManager.Services
             Action<string> progressOutput = null,
             Action<float> progressNumber = null)
         {
-            var branchName = DefaultGitBranch;
-            progressOutput?.Invoke($"Fetching file {ModMetadata} from {branchName}");
-            var isValidMod = await RepositoryService.IsFileExists(repositoryName, branchName, ModMetadata);
-            if (!isValidMod)
+            try
             {
-                progressOutput?.Invoke($"{ModMetadata} not found, fetching default branch name");
-                branchName = await RepositoryService.GetMainBranchFromRepository(repositoryName);
-                if (branchName == null)
-                    throw new RepositoryNotFoundException(repositoryName);
-
+                var branchName = DefaultGitBranch;
                 progressOutput?.Invoke($"Fetching file {ModMetadata} from {branchName}");
-                isValidMod = await RepositoryService.IsFileExists(repositoryName, branchName, ModMetadata);
-            }
-
-            if (!isValidMod)
-                throw new ModNotValidException(repositoryName);
-
-            var modPath = GetModPath(repositoryName);
-            if (Directory.Exists(modPath))
-            {
-                var errorMessage = MessageBox.Show($"A mod with the name '{repositoryName}' already exists. Do you want to overwrite the mod install.", "Warning", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No , MessageBoxOptions.DefaultDesktopOnly);
-
-                switch (errorMessage)
+                var isValidMod = await RepositoryService.IsFileExists(repositoryName, branchName, ModMetadata);
+                if (!isValidMod)
                 {
-                    case MessageBoxResult.Yes:
-                        Handle(() =>
-                        {
-                            MainViewModel.overwriteMod = true;
-                            foreach (var filePath in Directory.GetFiles(modPath, "*", SearchOption.AllDirectories))
-                            {
-                                var attributes = File.GetAttributes(filePath);
-                                if (attributes.HasFlag(FileAttributes.ReadOnly))
-                                    File.SetAttributes(filePath, attributes & ~FileAttributes.ReadOnly);
-                            }
+                    progressOutput?.Invoke($"{ModMetadata} not found, fetching default branch name");
+                    branchName = await RepositoryService.GetMainBranchFromRepository(repositoryName);
+                    if (branchName == null)
+                        throw new RepositoryNotFoundException(repositoryName);
 
-                            Directory.Delete(modPath, true);
-                        });
-                        break;
-                    case MessageBoxResult.No:
-                        throw new ModAlreadyExistsExceptions(repositoryName);
+                    progressOutput?.Invoke($"Fetching file {ModMetadata} from {branchName}");
+                    isValidMod = await RepositoryService.IsFileExists(repositoryName, branchName, ModMetadata);
                 }
+
+                if (!isValidMod)
+                    throw new ModNotValidException(repositoryName);
+
+                // Determinar la ruta completa del mod y crear todos los directorios necesarios
+                string modPath;
+                
+                try {
+                    // Para repositorios con formato usuario/repo
+                    if (repositoryName.Contains("/"))
+                    {
+                        string[] parts = repositoryName.Split('/');
+                        if (parts.Length == 2)
+                        {
+                            string userName = parts[0];
+                            string repoName = parts[1];
+                            
+                            // Obtener el directorio base para los mods
+                            string baseDir = ConfigurationService.ModCollectionPath;
+                            progressOutput?.Invoke($"Base directory: {baseDir}");
+                            
+                            // Asegurarse de que existe el directorio base
+                            if (!Directory.Exists(baseDir))
+                            {
+                                progressOutput?.Invoke($"Creating base directory: {baseDir}");
+                                Directory.CreateDirectory(baseDir);
+                            }
+                            
+                            // Crear el directorio del usuario si no existe
+                            string userDir = Path.Combine(baseDir, userName);
+                            if (!Directory.Exists(userDir))
+                            {
+                                progressOutput?.Invoke($"Creating user directory: {userDir}");
+                                Directory.CreateDirectory(userDir);
+                            }
+                            
+                            // Ahora sí, la ruta completa del mod
+                            modPath = Path.Combine(userDir, repoName);
+                        }
+                        else
+                        {
+                            // Formato no esperado, usar el comportamiento por defecto
+                            modPath = GetModPath(repositoryName);
+                        }
+                    }
+                    else
+                    {
+                        // No es un formato usuario/repo, usar el comportamiento por defecto
+                        modPath = GetModPath(repositoryName);
+                    }
+                    
+                    progressOutput?.Invoke($"Mod path: {modPath}");
+                    
+                    // Verificar si el mod ya existe
+                    if (Directory.Exists(modPath))
+                    {
+                        var errorMessage = MessageBox.Show($"A mod with the name '{repositoryName}' already exists. Do you want to overwrite the mod install.", "Warning", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No, MessageBoxOptions.DefaultDesktopOnly);
+
+                        switch (errorMessage)
+                        {
+                            case MessageBoxResult.Yes:
+                                try
+                                {
+                                    progressOutput?.Invoke($"Removing existing mod directory: {modPath}");
+                                    MainViewModel.overwriteMod = true;
+                                    
+                                    // Quitar atributos de solo lectura de todos los archivos
+                                    foreach (var filePath in Directory.GetFiles(modPath, "*", SearchOption.AllDirectories))
+                                    {
+                                        var attributes = File.GetAttributes(filePath);
+                                        if (attributes.HasFlag(FileAttributes.ReadOnly))
+                                            File.SetAttributes(filePath, attributes & ~FileAttributes.ReadOnly);
+                                    }
+
+                                    // Eliminar directorio
+                                    Directory.Delete(modPath, true);
+                                    
+                                    // Verificar que se haya eliminado correctamente
+                                    int retries = 0;
+                                    while (Directory.Exists(modPath) && retries < 5)
+                                    {
+                                        progressOutput?.Invoke($"Waiting for directory to be removed... Attempt {retries+1}");
+                                        System.Threading.Thread.Sleep(500); // Esperar un poco
+                                        retries++;
+                                        
+                                        if (Directory.Exists(modPath))
+                                        {
+                                            try 
+                                            {
+                                                // Intento adicional de eliminar
+                                                Directory.Delete(modPath, true);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                progressOutput?.Invoke($"Warning: Failed to delete directory on retry: {ex.Message}");
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (Directory.Exists(modPath))
+                                    {
+                                        progressOutput?.Invoke($"Error: Could not remove existing mod directory");
+                                        throw new IOException($"Could not remove directory: {modPath}");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    progressOutput?.Invoke($"Error removing existing mod: {ex.Message}");
+                                    throw;
+                                }
+                                break;
+                            case MessageBoxResult.No:
+                                throw new ModAlreadyExistsExceptions(repositoryName);
+                        }
+                    }
+                    
+                    // Crear el directorio del mod si no existe o fue eliminado
+                    if (!Directory.Exists(modPath))
+                    {
+                        progressOutput?.Invoke($"Creating mod directory: {modPath}");
+                        Directory.CreateDirectory(modPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    progressOutput?.Invoke($"Error creating directory structure: {ex.Message}");
+                    throw;
+                }
+
+                progressOutput?.Invoke($"Mod found, initializing cloning process");
+                await Task.Run(() =>
+                {
+                    var options = new CloneOptions
+                    {
+                        RecurseSubmodules = true,
+                    };
+                    options.FetchOptions.OnProgress = (serverProgressOutput) =>
+                    {
+                        progressOutput?.Invoke(serverProgressOutput);
+                        return true;
+                    };
+                    options.FetchOptions.OnTransferProgress = (progress) =>
+                    {
+                        var nProgress = ((float)progress.ReceivedObjects / (float)progress.TotalObjects);
+                        progressNumber?.Invoke(nProgress);
+
+                        progressOutput?.Invoke("Received Bytes: " + (progress.ReceivedBytes / 1048576) + " MB");
+                        return true;
+                    };
+                    
+                    try
+                    {
+                        Repository.Clone($"https://github.com/{repositoryName}", modPath, options);
+                        
+                        // Verificar si existe el archivo mod.yml después de clonar
+                        string modYmlPath = Path.Combine(modPath, "mod.yml");
+                        
+                        if (!File.Exists(modYmlPath))
+                        {
+                            progressOutput?.Invoke($"Warning: mod.yml file not found in repository. Generating a basic mod.yml file.");
+                            
+                            // Crear un archivo mod.yml básico
+                            var metadata = new Metadata
+                            {
+                                Title = repositoryName.Contains("/") ? repositoryName.Split('/')[1] : repositoryName,
+                                Description = "Auto-generated mod metadata",
+                                Game = "kh2", // Valor predeterminado
+                                Author = repositoryName.Contains("/") ? repositoryName.Split('/')[0] : "Unknown",
+                                Version = "1.0"
+                            };
+                            
+                            // Guardar el archivo generado
+                            using (var stream = File.Create(modYmlPath))
+                            {
+                                Metadata.Write(stream, metadata);
+                            }
+                            progressOutput?.Invoke($"Created basic mod.yml file at: {modYmlPath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        progressOutput?.Invoke($"Error cloning repository {repositoryName}: {ex.Message}");
+                        throw;
+                    }
+                });
             }
-
-            Directory.CreateDirectory(modPath);
-
-            progressOutput?.Invoke($"Mod found, initializing cloning process");
-            await Task.Run(() =>
+            catch (Exception ex)
             {
-                var options = new CloneOptions
-                {
-                    RecurseSubmodules = true,
-                };
-                options.FetchOptions.OnProgress = (serverProgressOutput) =>
-                {
-                    progressOutput?.Invoke(serverProgressOutput);
-                    return true;
-                };
-                options.FetchOptions.OnTransferProgress = (progress) =>
-                {
-                    var nProgress = ((float)progress.ReceivedObjects / (float)progress.TotalObjects);
-                    progressNumber?.Invoke(nProgress);
-
-                    progressOutput?.Invoke("Received Bytes: " + (progress.ReceivedBytes / 1048576) + " MB");
-                    return true;
-                };
-
-                Repository.Clone($"https://github.com/{repositoryName}", modPath, options);
-            });
+                progressOutput?.Invoke($"Error in InstallModFromGithub: {ex.Message}");
+                throw;
+            }
         }
 
         public static void InstallModFromLua(string fileName)
@@ -401,14 +803,63 @@ namespace OpenKh.Tools.ModsManager.Services
                 $"assets:\r\n- name: scripts/{Path.GetFileName(fileName)}\r\n  method: copy\r\n  source:\r\n  - name: {Path.GetFileName(fileName)}";
             string _yamlPath = Path.Combine(modPath + "/mod.yml");
 
-            File.WriteAllText(_yamlPath, yaml);
+            using (var stream = File.Create(_yamlPath))
+            {
+                using var writer = new StreamWriter(stream);
+                writer.Write(yaml);
+            }
         }
 
-        public static string GetModPath(string author, string repo) =>
+        public static string GetModPath(string author, string repo) => 
             Path.Combine(ConfigurationService.ModCollectionPath, author, repo);
 
-        public static string GetModPath(string repositoryName) =>
-            Path.Combine(ConfigurationService.ModCollectionPath, repositoryName);
+        public static string GetModPath(string repositoryName)
+        {
+            // Para repositorios con formato usuario/repo
+            if (repositoryName.Contains("/"))
+            {
+                string[] parts = repositoryName.Split('/');
+                if (parts.Length == 2)
+                {
+                    string userName = parts[0];
+                    string repoName = parts[1];
+                    
+                    // Obtener el directorio base para los mods
+                    string basePath = ConfigurationService.ModCollectionPath;
+                    
+                    // Crear el directorio base si no existe
+                    if (!Directory.Exists(basePath))
+                    {
+                        Directory.CreateDirectory(basePath);
+                    }
+                    
+                    // Crear el directorio del usuario si no existe
+                    string userDir = Path.Combine(basePath, userName);
+                    if (!Directory.Exists(userDir))
+                    {
+                        Directory.CreateDirectory(userDir);
+                    }
+                    
+                    // Devolver la ruta completa (y crear el directorio del repo si no existe)
+                    string repoPath = Path.Combine(userDir, repoName);
+                    if (!Directory.Exists(repoPath))
+                    {
+                        Directory.CreateDirectory(repoPath);
+                    }
+                    
+                    return repoPath;
+                }
+            }
+            
+            // No es formato usuario/repo, usar formato estándar
+            string defaultPath = Path.Combine(ConfigurationService.ModCollectionPath, repositoryName);
+            if (!Directory.Exists(defaultPath))
+            {
+                Directory.CreateDirectory(defaultPath);
+            }
+            
+            return defaultPath;
+        }
 
         public static IEnumerable<ModModel> GetMods(IEnumerable<string> modNames)
         {
@@ -425,6 +876,113 @@ namespace OpenKh.Tools.ModsManager.Services
                     Metadata = File.OpenRead(Path.Combine(modPath, ModMetadata)).Using(Metadata.Read),
                     IsEnabled = enabledMods.Contains(modName)
                 };
+            }
+        }
+
+        public static IEnumerable<ModModel> GetAllMods()
+        {
+            var enabledMods = ConfigurationService.EnabledMods;
+            var baseModsPath = ConfigurationService.ModCollectionPath;
+            
+            // Depuración
+            System.Diagnostics.Debug.WriteLine($"Base mods path: {baseModsPath}");
+            
+            // Lista para almacenar todos los directorios que podrían contener mods
+            List<string> allPotentialModPaths = new List<string>();
+            
+            // 1. Buscar mods directamente en el directorio base (estructura antigua)
+            try
+            {
+                if (Directory.Exists(baseModsPath))
+                {
+                    allPotentialModPaths.AddRange(Directory.EnumerateDirectories(baseModsPath));
+                    
+                    // 2. Buscar mods en estructura usuario/repo (directorios anidados)
+                    foreach (var userDir in Directory.EnumerateDirectories(baseModsPath))
+                    {
+                        // Por cada directorio de usuario, buscar sus repositorios
+                        allPotentialModPaths.AddRange(Directory.EnumerateDirectories(userDir));
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"¡Directorio base de mods no existe!: {baseModsPath}");
+                    Directory.CreateDirectory(baseModsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error accediendo a directorios de mods: {ex.Message}");
+            }
+            
+            // Depuración
+            System.Diagnostics.Debug.WriteLine($"Número de directorios potenciales de mods: {allPotentialModPaths.Count}");
+            foreach (var dir in allPotentialModPaths)
+            {
+                System.Diagnostics.Debug.WriteLine($"Directorio potencial: {dir}");
+            }
+            
+            // Procesar todos los directorios potenciales de mods
+            foreach (var modPath in allPotentialModPaths)
+            {
+                string modYmlPath = Path.Combine(modPath, ModMetadata);
+                
+                // Depuración
+                System.Diagnostics.Debug.WriteLine($"Comprobando mod.yml en: {modYmlPath}");
+                
+                // Solo consideramos directorios que tengan un archivo mod.yml
+                if (File.Exists(modYmlPath))
+                {
+                    ModModel modModel = null;
+                    
+                    try
+                    {
+                        // Determinar el nombre del mod basado en la estructura
+                        string modName;
+                        
+                        // Si es estructura usuario/repo (el parent no es el directorio base)
+                        string parentDirPath = Directory.GetParent(modPath).FullName;
+                        if (parentDirPath != baseModsPath)
+                        {
+                            string userName = Path.GetFileName(parentDirPath);
+                            string repoName = Path.GetFileName(modPath);
+                            modName = $"{userName}/{repoName}";
+                        }
+                        else
+                        {
+                            // Estructura antigua, solo el nombre del directorio
+                            modName = Path.GetFileName(modPath);
+                        }
+                        
+                        // Comprobar y establecer las rutas de imágenes
+                        string iconPath = Path.Combine(modPath, "icon.png");
+                        string previewPath = Path.Combine(modPath, "preview.png");
+                        
+                        // Depuración
+                        System.Diagnostics.Debug.WriteLine($"Mod: {modName}, Icon: {iconPath} (Existe: {File.Exists(iconPath)})");
+                        
+                        modModel = new ModModel
+                        {
+                            Name = modName,
+                            Path = modPath,
+                            IconImageSource = File.Exists(iconPath) ? iconPath : null,
+                            PreviewImageSource = File.Exists(previewPath) ? previewPath : null,
+                            Metadata = File.OpenRead(modYmlPath).Using(Metadata.Read),
+                            IsEnabled = enabledMods.Contains(modName)
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        // Loguear el error para diagnóstico
+                        System.Diagnostics.Debug.WriteLine($"Error cargando mod en {modPath}: {ex.Message}");
+                        continue;
+                    }
+                    
+                    if (modModel != null)
+                    {
+                        yield return modModel;
+                    }
+                }
             }
         }
 

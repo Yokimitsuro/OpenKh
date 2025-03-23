@@ -4,15 +4,23 @@ using OpenKh.Tools.ModsManager.Services;
 using OpenKh.Tools.ModsManager.Views;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Xe.Tools;
 using Xe.Tools.Wpf.Commands;
+using System.Drawing;
+using System.Drawing.Imaging;
 using static OpenKh.Tools.ModsManager.Helpers;
+
+// Definir alias para evitar ambigüedades
+using WpfBrush = System.Windows.Media.Brush;
+using DrawingBrush = System.Drawing.Brush;
 
 namespace OpenKh.Tools.ModsManager.ViewModels
 {
@@ -133,6 +141,28 @@ namespace OpenKh.Tools.ModsManager.ViewModels
 
         public string Description => _model.Metadata?.Description;
 
+        public List<string> Dependencies => _model.Metadata?.Dependencies?.Select(d => d.Name).ToList() ?? new List<string>();
+        public bool HasDependencies => Dependencies.Count > 0;
+        public string DependenciesList => string.Join(", ", Dependencies);
+        public Visibility DependenciesVisibility => HasDependencies ? Visibility.Visible : Visibility.Collapsed;
+
+        public string Priority => _model.Metadata?.Priority;
+        public bool HasPriority => !string.IsNullOrEmpty(Priority);
+        public Visibility PriorityVisibility => HasPriority ? Visibility.Visible : Visibility.Collapsed;
+        public bool IsHighPriority => Priority?.ToUpperInvariant() == "ABOVE";
+        public bool IsLowPriority => Priority?.ToUpperInvariant() == "BELOW";
+        public string PriorityText => IsHighPriority ? "Install this ABOVE all other mods" : 
+                                         IsLowPriority ? "Install this BELOW all other mods" : 
+                                         $"Priority: {Priority}";
+
+        public System.Windows.Media.Brush PriorityBackground => IsHighPriority ? System.Windows.Media.Brushes.DarkRed : 
+                                           IsLowPriority ? System.Windows.Media.Brushes.DarkBlue : 
+                                           System.Windows.Media.Brushes.DarkGray;
+
+        public bool HasMissingDependencies { get; set; }
+        public Visibility MissingDependenciesVisibility => HasMissingDependencies ? Visibility.Visible : Visibility.Collapsed;
+        public string MissingDependenciesMessage => "Missing dependencies! Please install required mods first.";
+
         public string Homepage
         {
             get
@@ -194,12 +224,24 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                 OnPropertyChanged(nameof(Description));
                 OnPropertyChanged(nameof(Homepage));
                 OnPropertyChanged(nameof(FilesToPatch));
+                OnPropertyChanged(nameof(Dependencies));
+                OnPropertyChanged(nameof(DependenciesList));
+                OnPropertyChanged(nameof(DependenciesVisibility));
+                OnPropertyChanged(nameof(Priority));
+                OnPropertyChanged(nameof(PriorityVisibility));
+                OnPropertyChanged(nameof(IsHighPriority));
+                OnPropertyChanged(nameof(IsLowPriority));
+                OnPropertyChanged(nameof(PriorityText));
+                OnPropertyChanged(nameof(PriorityBackground));
                 UpdateCount = 0;
             });
         });
 
         private static void LoadImage(string source, string fallback, Action<ImageSource> setter)
         {
+            // Debug para ver qué rutas estamos intentando cargar
+            System.Diagnostics.Debug.WriteLine($"Intentando cargar imagen desde: {source}");
+            
             if (string.IsNullOrEmpty(source) && !string.IsNullOrEmpty(fallback))
             {
                 LoadImage(fallback, null, setter);
@@ -210,26 +252,67 @@ namespace OpenKh.Tools.ModsManager.ViewModels
             {
                 if (!File.Exists(source))
                 {
+                    System.Diagnostics.Debug.WriteLine($"Archivo no encontrado: {source}");
                     if (!string.IsNullOrEmpty(fallback))
                         LoadImage(fallback, null, setter);
                     return;
                 }
 
-                using (var fs = new FileStream(source, FileMode.Open))
+                System.Diagnostics.Debug.WriteLine($"Archivo encontrado, cargando: {source}");
+                
+                // Cargar los bytes de la imagen
+                byte[] imageData = File.ReadAllBytes(source);
+                
+                Application.Current.Dispatcher.Invoke(() => 
                 {
-                    var bitmapImage = new BitmapImage();
-                    bitmapImage.BeginInit();
-                    bitmapImage.StreamSource = fs;
-                    bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmapImage.EndInit();
-                    bitmapImage.Freeze();
-
-                    Application.Current.Dispatcher.Invoke(() => setter(bitmapImage));
-                }
+                    try
+                    {
+                        var bitmapImage = new BitmapImage();
+                        bitmapImage.BeginInit();
+                        bitmapImage.StreamSource = new MemoryStream(imageData);
+                        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmapImage.EndInit();
+                        bitmapImage.Freeze();
+                        
+                        setter(bitmapImage);
+                        System.Diagnostics.Debug.WriteLine($"Imagen cargada correctamente: {source}");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error al inicializar BitmapImage: {ex.Message}");
+                        
+                        // Si hay una imagen de fallback, intentar cargarla
+                        if (!string.IsNullOrEmpty(fallback))
+                        {
+                            try
+                            {
+                                LoadImage(fallback, null, setter);
+                            }
+                            catch (Exception fallbackEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error también al cargar fallback: {fallbackEx.Message}");
+                            }
+                        }
+                    }
+                });
             }
-            catch
+            catch (Exception ex)
             {
-                // Silently fail if the image can not be loaded
+                // Loguear el error
+                System.Diagnostics.Debug.WriteLine($"Error al cargar imagen {source}: {ex.Message}");
+                
+                // Si hay una imagen de fallback, intentar cargarla
+                if (!string.IsNullOrEmpty(fallback))
+                {
+                    try
+                    {
+                        LoadImage(fallback, null, setter);
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error también al cargar fallback: {fallbackEx.Message}");
+                    }
+                }
             }
         }
     }

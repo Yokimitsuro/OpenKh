@@ -116,8 +116,11 @@ namespace OpenKh.Patcher
                     if (assetFile.Multi != null)
                         names.AddRange(assetFile.Multi.Select(x => x.Name).Where(x => !string.IsNullOrEmpty(x)));
 
-                    foreach (var name in names)
+                    foreach (var originalName in names)
                     {
+                        // Create a modifiable copy of the name
+                        var name = originalName;
+                        
                         if (assetFile.Platform == null)
                             assetFile.Platform = "both";
 
@@ -144,13 +147,23 @@ namespace OpenKh.Patcher
 
                         if (Path.IsPathRooted(name) && !Path.GetPathRoot(name).Equals(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
                         {
-                            Log.Err($"File Path \"" + name + "\" cannot be copied as it is rooted and can cause instability! Aborting...");
+                            Log.Err($"File Path \"{name}\" cannot be copied as it is rooted and can cause instability! Aborting...");
                             throw new PatcherException(metadata, new InvalidOperationException("Root Copy Detected!"));
                         }
 
                         var dstFile = context.GetDestinationPath(name);
                         var packageMapLocation = "";
                         var _pcFile = name.Contains("remastered") || name.Contains("raw");
+
+                        // Apply GlowTextureMode for remastered textures
+                        if (_pcFile && metadata?.GlowTextureMode == true)
+                        {
+                            // Convert 0x20000000 (regular textures) to 0x40000000 (glowing textures)
+                            // This is used by Panacea to handle transparency for remastered textures
+                            Log.Info("Applying GlowTextureMode for remastered texture: {0}", name);
+                            name = name.Replace("remastered", "remastered_glow");
+                            dstFile = context.GetDestinationPath(name);
+                        }
 
                         // Special case for mods that want to bundle scripts or DLL files
                         var nonGameFile = name.StartsWith("scripts/") || name.StartsWith("scripts\\") || name.StartsWith("dlls/") || name.StartsWith("dlls\\");
