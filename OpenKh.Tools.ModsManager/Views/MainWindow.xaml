@@ -15,6 +15,7 @@
     <Window.InputBindings>
         <KeyBinding Key="F4" Modifiers="Alt" Command="{Binding ExitCommand}"/>
         <KeyBinding Key="Insert" Command="{Binding AddModCommand}"/>
+        <KeyBinding Key="Insert" Modifiers="Alt" Command="{Binding OpenRepositoryWindowCommand}"/>
         <KeyBinding Key="Delete" Command="{Binding RemoveModCommand}"/>
         <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenModFolderCommand}"/>
         <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding MoveUp}"/>
@@ -61,6 +62,7 @@
         <Menu Grid.Row="0">
             <MenuItem Header="_Mods">
                 <MenuItem Header="_Install a new mod" Command="{Binding AddModCommand}" InputGestureText="Ins"/>
+                <MenuItem Header="_Install a new mod from repositories" Command="{Binding OpenRepositoryWindowCommand}" InputGestureText="Alt+Ins"/>
                 <Separator/>
                 <MenuItem Header="_Open mod folder" Command="{Binding OpenModFolderCommand}" InputGestureText="Ctrl+O"/>
                 <MenuItem Header="_Delete selected mod" Command="{Binding RemoveModCommand}" InputGestureText="Del"/>

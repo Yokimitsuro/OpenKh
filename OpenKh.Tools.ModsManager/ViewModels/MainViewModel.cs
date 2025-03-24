@@ -99,6 +99,7 @@ namespace OpenKh.Tools.ModsManager.ViewModels
         public RelayCommand CheckForModUpdatesCommand { get; set; }
         public RelayCommand YamlGeneratorCommand { get; set; }
         public RelayCommand RefreshDownloadableModsCommand { get; set; }
+        public RelayCommand OpenRepositoryWindowCommand { get; set; }
 
         public ModViewModel SelectedValue
         {
@@ -582,6 +583,16 @@ namespace OpenKh.Tools.ModsManager.ViewModels
             );
 
             RefreshDownloadableModsCommand = new RelayCommand(x => RefreshDownloadableMods());
+
+            OpenRepositoryWindowCommand = new RelayCommand(_ =>
+            {
+                var window = new RepositoryModWindow
+                {
+                    Owner = Application.Current.MainWindow
+                };
+                window.ShowDialog();
+            });
+
 
             _pcsx2Injector = new Pcsx2Injector(new OperationDispatcher());
             _ = FetchUpdates();
@@ -1450,5 +1461,6 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                 }
             }
         }
+
     }
 }
