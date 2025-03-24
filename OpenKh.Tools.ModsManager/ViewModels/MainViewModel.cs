@@ -565,20 +565,13 @@ namespace OpenKh.Tools.ModsManager.ViewModels
             );
 
             YamlGeneratorCommand = new RelayCommand(
-                _ =>
+                x =>
                 {
                     var window = new YamlGeneratorWindow()
                     {
-                        Owner = _getActiveWindowService.GetActiveWindow(),
+                        Owner = _getActiveWindowService.GetActiveWindow()
                     };
-                    window.Closing += (_, e) =>
-                    {
-                        if (!e.Cancel)
-                        {
-                            window.Owner?.Focus();
-                        }
-                    };
-                    window.Show();
+                    window.ShowDialog();
                 }
             );
 
@@ -586,13 +579,20 @@ namespace OpenKh.Tools.ModsManager.ViewModels
 
             OpenRepositoryWindowCommand = new RelayCommand(_ =>
             {
-                var window = new RepositoryModWindow
+                var window = new RepositoryModWindow()
                 {
-                    Owner = Application.Current.MainWindow
+                    Owner = _getActiveWindowService.GetActiveWindow(),
+                    DataContext = this
                 };
-                window.ShowDialog();
+                window.Closing += (_, e) =>
+                {
+                    if (!e.Cancel)
+                    {
+                        window.Owner?.Focus();
+                    }
+                };
+                window.Show();
             });
-
 
             _pcsx2Injector = new Pcsx2Injector(new OperationDispatcher());
             _ = FetchUpdates();
@@ -760,7 +760,7 @@ namespace OpenKh.Tools.ModsManager.ViewModels
                             return Task.CompletedTask;
                         }
                     }
-                    if (ConfigurationService.PCVersion == "Steam" && !(_launchGame == "kh3d") && ConfigurationService.SteamAPITrick1525 == false)
+                    else if (ConfigurationService.PCVersion == "Steam" && !(_launchGame == "kh3d") && ConfigurationService.SteamAPITrick1525 == false)
                     {
                         if (ConfigurationService.PcReleaseLocation != null)
                         {
