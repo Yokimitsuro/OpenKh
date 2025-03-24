@@ -19,7 +19,7 @@ namespace OpenKh.Tools.ModsManager.Services
 {
     public static class DownloadableModsService
     {
-        private const string DEFAULT_MODS_JSON_URL = "https://raw.githubusercontent.com/Yokimitsuro/mods-manager-feed/refs/heads/main/downloadable-mods.json";
+        private const string DEFAULT_MODS_JSON_URL = "https://raw.githubusercontent.com/OpenKH/mods-manager-feed/refs/heads/main/downloadable-mods.json";
         private static string CachePath => Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "downloadable-mods.json");
         private static HttpClient _httpClient = new HttpClient();
         private static string _modDirectoryPath = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "mods");
